@@ -18,15 +18,15 @@ int clockPin = 3;
  
 const int numPixels = 48;  // Change this if using more than one strand
  
-const int maxEyes = 3; // maximum number of concurrently active blinkers
+const int maxEyes = 10; // maximum number of concurrently active blinkers
  
 // dead-time between lighting of a range of pixels
 const int deadTimeMin = 50;
-const int deadTimeMax = 500;
+const int deadTimeMax = 200;
  
 // interval between blink starts - independent of position
 const int intervalMin = 10;
-const int intervalMax = 300;
+const int intervalMax = 100;
  
 const int stepInterval = 10;
 long lastStep = 0;

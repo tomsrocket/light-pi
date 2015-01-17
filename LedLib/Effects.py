@@ -1,37 +1,13 @@
 #!/usr/bin/python
 
-import sys
-
-# logging 
-def logg( msg):
-    print msg;
-
-devMode = 0
-wormoSizel = 2
-
-logg( "arguments " + str(len(sys.argv)) )
-if ( len(sys.argv) > 1 ):
-    if ( sys.argv[1] == "dev" ):
-        devMode = 1
-    
-if ( len(sys.argv) > 2 ):
-    wormoSizel = int(sys.argv[2])
-
 import math
-import random
 import time
+#import pygame
+#import sys
+import RPi.GPIO as GPIO, Image, time
 
-spidev = None
-
-if ( devMode == 0 ):
-    import RPi.GPIO as GPIO, Image, time
-    dev       = "/dev/spidev0.0"
-    spidev    = file(dev, "wb")
-else:
-    import pygame
-
-#import LedLib 
-
+dev       = "/dev/spidev0.0"
+spidev    = file(dev, "wb")
 
 class LedEffekts: 
 
@@ -65,6 +41,9 @@ class LedEffekts:
 
 
 
+# logging 
+def logg( msg):
+    print msg;
 
 SIZE = 32*5
 EFFECTS = LedEffekts()
@@ -90,14 +69,10 @@ class LedStrip:
         # Calculate gamma correction table.  This includes
         # LPD8806-specific conversion (7-bit color w/high bit set).
         for i in range(256):
-            self.gammaLookup[i] = i
+            self.gammaLookup[i] = 0x80 | int(pow(float(i) / 255.0, 2.5) * 127.0 + 0.5)
 
-            # for some reason this isnt necessary anymore: 
-            # self.gammaLookup[i] = 0x80 | int(pow(float(i) / 255.0, 2.5) * 127.0 + 0.5)
-
-        if ( devMode > 0 ):
-            pygame.init() 
-            self.screen = pygame.display.set_mode((640+161*2, 100)) 
+#        pygame.init() 
+#        self.screen = pygame.display.set_mode((640+161*2, 100)) 
 
 
     def sanitizeColor( self, c ):
@@ -118,20 +93,16 @@ class LedStrip:
             rr = self.sanitizeColor(cols[y3+0] )
             rg = self.sanitizeColor(cols[y3+1] )
             rb = self.sanitizeColor(cols[y3+2] )
-            if ( devMode > 0 ):
-                my = self.size-y
-                pygame.draw.rect(self.screen,(rr,rg,rb),[(my%9)*6,6*int(my/9),5,5])
+            #pygame.draw.rect(self.screen,(rr,rg,rb),[y*6,20,5,5])
 
             leds[y3 + 1] = self.gammaLookup[int(rr)]
             leds[y3]     = self.gammaLookup[int(rg)]
             leds[y3 + 2] = self.gammaLookup[int(rb)]
         
-        if ( devMode == 0 ):
-            spidev.write(leds)
-            spidev.flush()
-        else:
-            pygame.display.flip()
-
+        spidev.write(leds)
+        spidev.flush()
+        
+        #pygame.display.flip()
         self.clear()
 
     def clear( self ):
@@ -269,7 +240,7 @@ class LedShow:
 
     columns = []
     ls = LedStrip()
-    lastCol = bytearray( SIZE* 3 + 1)
+    lastCol = []
 
 
     def addColumn( self, column ):
@@ -279,8 +250,7 @@ class LedShow:
         self.columns.append( ( column, -1 ) )
 
     def show( self, timer, rangeStart, rangeEnd ):
-        rangeEnd = rangeEnd * 3;
-        rangeStart = rangeStart  *3;
+        rangeEnd = rangeEnd * 2;
         ls = self.ls
         for col in self.columns:
             print "has column " + str(id(col[0]))
@@ -291,33 +261,27 @@ class LedShow:
             for column in self.columns: 
                 c = column[0].getColumn( counter )
                 ls.addColumn( c, column[1] ) 
-
             ls.show()
-            if timer:
-                time.sleep( timer ) 
+
+            time.sleep( timer )
 
         for column in self.columns: 
             c = column[0].getColumn( counter )
             ls.addColumn( c, column[1] ) 
 
-        if timer:
-            time.sleep( timer )
-
         self.lastCol = ls.getColumn()
         ls.clear()
 
-    def deleteColumns( self ):
-        self.columns=[]
 
     def clear( self, type=0 ):
         self.columns=[]
 
         column = Column( )
         column.setColumn( self.lastCol )
-        column.addEffect( Fadeout( 0.01 ) )
+        column.addEffect( Fadeout( 0.05 ) )
         column.addEffect( Scroll( 'right') )
         self.addColumn( column )
-        self.show(0.007, 0, 40 )
+        self.show(0.02, 0, 50 )
         self.columns=[]
 
 
@@ -328,8 +292,6 @@ class LedShow:
 def sinewave( count, width ):
     return int( width+math.sin( count )*width )
 
-def sinebounce( count, width ):
-    return int(abs( math.sin( count )*width ))
 
 
 
@@ -410,29 +372,15 @@ class SolidCloud( BaseEffect ):
 
 
 
-
 class StageLights( BaseEffect ):
-    def __init__( self ):
-        self.width = random.randint(10, 80)
-        self.speed = ( random.uniform(0.0005, 0.02), random.uniform(0.0005, 0.02), random.uniform(0.0005, 0.02) )
+    def __init__( self, size, pos, color ):
+        self.width = random.randint(10, 40)
+        self.speed = ( random.uniform(0.005, 0.5), random.uniform(0.005, 0.5), random.uniform(0.005, 0.5) )
         self.color = ( random.uniform(0.5, 1), random.uniform(0.5, 1), random.uniform(0.5, 1) )
-        logg( self.speed )
     def applyToColumn( self, column, counter ):
-        EFFECTS.cloud( column, self.width,sinewave( 0.0 + counter * self.speed[0], 70 ), (255*self.color[0],0,0) )
-        EFFECTS.cloud( column, self.width,sinewave( 0.0 + counter * self.speed[1], 70 ), (0,255*self.color[1],0) )
-        EFFECTS.cloud( column, self.width,sinewave( 0.0 + counter * self.speed[2], 70 ), (0,0,255*self.color[2]) )
-
-
-class MovingCloud( BaseEffect ):
-    def __init__( self, size, speed, color, offset ):
-        self.width = size
-        self.speed = speed
-        self.color = color
-        self.offset = offset;
-        self.height = random.randint(50, 155)
-    def applyToColumn( self, column, counter ):
-        EFFECTS.cloud(column, self.width, int(self.width/2) + sinebounce( 0.0 + self.offset + counter * self.speed, self.height ), self.color )
-
+        EFFECTS.cloud( column, self.width,sinewave( counter * self.speed[0], 70 ), (255*self.color[0],0,0) )
+        EFFECTS.cloud( column, self.width,sinewave( counter * self.speed[1], 70 ), (0,255*self.color[1],0) )
+        EFFECTS.cloud( column, self.width,sinewave( counter * self.speed[2], 70 ), (0,0,255*self.color[2]) )
 
 
 class BlockFadeOut( BaseEffect ):
@@ -466,240 +414,74 @@ class Blink( BaseEffect ):
     def applyToColumn( self, column, counter ):
         if ( (counter+self.offset) % (self.w1+self.w2) < self.w2):
             rr=self.col[0]
-            rg=self.col[1] 
+            rg=self.col[1]
             rb=self.col[2]
             column.addLedRgb( self.pos, rr, rg,rb )
 
 
 
-class Fire( BaseEffect ):
-    firewidth = 10
-    def __init__( self ):
-        self.firewidth = 9
-
-    def applyToColumn( self, column, counter ):
-        for y in range( 0, self.firewidth ):
-            on = random.randint( 1, 1 )
-            if (on<3):
-                col1 = random.randint( 200,255 );
-                col3 = random.randint( 0, 170);
-                col2 = col3 +random.randint( 0, 221);
-                column.setLedRgb( y, col1, col2, col3 )
-            else: 
-                column.setLedRgb( y, random.randint(0,255),0,0 )
-        
-        numLines = int(column.size / self.firewidth)
-        for x in range( 0, numLines ):
-            x = numLines - x -1
-            for y in range( x*self.firewidth, (x+1)*self.firewidth ):
-                col = column.getColorAt( y )
-                column.setLedRgb( y+self.firewidth, col[0]*random.uniform(0.8,0.95), col[1]*random.uniform(0.7,0.8), col[2]*random.uniform(0.5,0.7) )
-
-
-
-def colChannel( max ): 
-    return int( 1.0* random.randint(0, 255) / 16.0 ) * max
-
-def colorGen():
-    return ( colChannel(12), colChannel(12), colChannel(12) )
-
-
-class ColorSeq( ):
-    _seqCol = [0,0,0]
-    def __init__(self):
-        self._seqCol = [colChannel(4),colChannel(4),colChannel(4)]
-    def next(self):
-        colnr = random.randint(0,2)
-        self._seqCol[colnr] += 255/4
-        print self._seqCol
-        return list(self._seqCol)
 
 
 
 
-activeEffects = [ 
-    'fire',
-    'colorDotWorm',
-    'stageLights',
-    'threeHoles',
-    #'TwoSideColorScroll',
-    #'hoppingColorClouds'
-    'colorScroll',
 
-    #'christmasDots',
-    'bouncyCloud',
-]
-
-lastEffect = 23490234
 ledShow = LedShow()
 # ====================================================>
 while True:
 
-    while True:
-        effectNr = random.randint(0, len(activeEffects)-1 )
-        if effectNr != lastEffect:
-            break
+    column = Column( )
+    column.addEffect( ClearColumn() )
+    column.addEffect( StageLights( ) )
+    ledShow.addColumn( column )
 
-    duration = random.randint(200, 400)
-    effect = activeEffects[effectNr]
-    logg( "================> "+  effect +"("+str(effectNr )+"), duration: "+str(duration) );
-
-
-    # Random color dot worm
-    # ====================================================>
-    if effect == "colorDotWorm": 
-        for i in range(1,random.randint(4, 8)):
-            column = Column( )
-            column.setColumn( ledShow.lastCol )
-            ledShow.deleteColumns()
-            column.addEffect( SolidDot( 0, (0,0,0) ) )
-            wormoSize = random.uniform(2, 6)
-            if ( wormoSize == 4 ):
-                wormoSize *= 5
-            column.addEffect( Blink( 0, (random.randint(0, 255),random.randint(0, 255),random.randint(0, 255)), wormoSize, wormoSize, 0 ) )
-            column.addEffect( Blink( 0, (random.randint(0, 255),random.randint(0, 255),random.randint(0, 255)), wormoSize, wormoSize, wormoSize ) )
-            column.addEffect( Scroll( 'right') )
-            ledShow.addColumn( column )
-            cSpeed = random.uniform(0, 0.2)
-            ledShow.show(0, 0, 50 )
-            ledShow.show(cSpeed, 49, random.randint(70, 100) )
-
-#            column = Column( )
-#            column.setColumn( ledShow.lastCol )
-#            ledShow.deleteColumns()
-#            column.addEffect( SolidDot( 0, (0,0,0) ) )
-#            column.addEffect( Scroll( 'right') )
-#            ledShow.addColumn( column )
-#            ledShow.show( cSpeed, 0, 1 )
-
-
-    # Stage lights
-    # ====================================================>
-    if effect == "stageLights":
-        column = Column( )
-        column.addEffect( ClearColumn() )
-        column.addEffect( StageLights( ) )
-        ledShow.addColumn( column )
-
-        ledShow.show(0.01, 0, duration )
-
-
-    # Three holes
-    # ====================================================>
-    if effect == 'threeHoles':
-        column = Column( )
-        column.addEffect( ColorDot( 0,0.01 ) )
-        column.addEffect( Scroll( 'right') )
-        ledShow.addColumn( column )
-
-        holeSize = random.randint(5, 20)
-        holeDepth = random.uniform(0.03, 1)
-        column = StaticColumn()
-        column.addEffect( SolidCloud( holeSize,SIZE/2,(255*holeDepth,255*holeDepth,255*holeDepth) ) )
-        holeDepth = random.uniform(0.03, 1)
-        column.addEffect( SolidCloud( holeSize,SIZE*3/4,(255*holeDepth,255*holeDepth,255*holeDepth) ) )
-        holeDepth = random.uniform(0.03, 1)
-        column.addEffect( SolidCloud( holeSize,SIZE*1/4,(255*holeDepth,255*holeDepth,255*holeDepth) ) )
-        ledShow.subColumn( column )
-
-        ledShow.show(0.01, 0, duration )
-
-
-    # Christmas dots
-    # ====================================================>
-    if effect == 'christmasDots':
-        column = Column( )
-        distance = random.randint(10, 100)
-        width = random.randint(1, 5)
-        column.addEffect( SolidDot( 0, (0,0,0) ) )
-        column.addEffect( Blink( 0, (255,0,0), distance, width, 0 ) )
-        column.addEffect( Blink( 0, (255,255,255), distance, width, distance/2+width/2 ) )
-        column.addEffect( Scroll( 'right') )
-        ledShow.addColumn( column )
-
-        ledShow.show(random.uniform(0.01, 0.05), 0, duration )
-
-
-    # Fire
-    # ====================================================>
-    if effect == 'fire':
-        column = Column( )
-        column.addEffect( Fire( ) )
-        ledShow.addColumn( column )
-        ledShow.show(0.1, 0, duration )
-
-
-    # Quick color scrolls
-    # ====================================================>
-    if effect == 'TwoSideColorScroll':
-        column = Column( )
-        colorSpeed = random.uniform(0.01, 0.1)
-        column.addEffect( ColorDot( 0,colorSpeed) )
-        column.addEffect( Scroll( 'right') )
-        column.addEffect( Fadeout( random.uniform(0.01, 0.05) ) )
-        ledShow.addColumn( column )
-
-        column = Column( )
-        column.addEffect( ColorDot( SIZE, colorSpeed) )
-        column.addEffect( Scroll( 'left') )
-        column.addEffect( Fadeout( random.uniform(0.01, 0.05) ) )
-        ledShow.addColumn( column )
-
-        ledShow.show(0.02, 0, duration )
-
-    # Color scrolls
-    # ====================================================>
-    if effect == 'colorScroll':
-        column = Column( )
-        colorSpeed = random.uniform(0.001, 0.01)
-        column.addEffect( ColorDot( 0,colorSpeed) )
-        column.addEffect( Scroll( 'right') )
-        #column.addEffect( Fadeout( random.uniform(0.01, 0.05) ) )
-        ledShow.addColumn( column )
-
-        ledShow.show(0.001, 0, duration )
-
-    # Bouncy cloud
-    # ====================================================>
-    if effect == 'bouncyCloud':
-        column = Column( )
-        column.addEffect( MovingCloud( random.randint(6, 50), 0.01, ( random.randint(100,200),random.randint(100,200),random.randint(100,200) ), 0.0 ) )
-        column.addEffect( Fadeout( random.uniform(0.1, 0.3) ) )
-        ledShow.addColumn( column )
-
-        ledShow.show(random.uniform(0.0, 0.02), 0, duration )
-
-    # Many color clouds
-    # ====================================================>
-    if effect == 'hoppingColorClouds':
-        column = Column( )
-        sizy = random.randint(1, 3)
-        speedy = random.uniform(0.001, 0.009)
-        myCol = ColorSeq()
-        distancy = random.uniform(0.05, 0.25)
-        column.addEffect( MovingCloud( sizy , speedy, myCol.next(), 0.0 ) )
-        column.addEffect( MovingCloud( sizy , speedy, myCol.next(), distancy ) )
-        column.addEffect( MovingCloud( sizy , speedy, myCol.next(), distancy*2.0 ) )
-        column.addEffect( MovingCloud( sizy , speedy, myCol.next(), distancy*3.0 ) )
-        column.addEffect( MovingCloud( sizy , speedy, myCol.next(), distancy*4.0 ) )
-        column.addEffect( Fadeout( random.uniform(0.1, 0.3) ) )
-        ledShow.addColumn( column )
-
-        ledShow.show( 0.001 , 0, duration * 2)
-
-
-
-
-
+    ledShow.show(0.01, 0, 800 )
     ledShow.clear()
+    # ====================================================>
 
-    # window sizes
-    #12 +32
-    #42
-    #32
-    #42
+    column = Column( )
+    column.addEffect( ColorDot( 0,0.01 ) )
+    column.addEffect( Scroll( 'right') )
+    ledShow.addColumn( column )
+
+    column = StaticColumn()
+    column.addEffect( SolidCloud( 10,SIZE/2,(255,255,255) ) )
+    column.addEffect( SolidCloud( 10,SIZE*3/4,(255,255,255) ) )
+    column.addEffect( SolidCloud( 10,SIZE*1/4,(255,255,255) ) )
+    #column.addEffect( SolidCloud( 10,SIZE,(255,255,255) ) )
+    #column.addEffect( SolidCloud( 10,0,(255,255,255) ) )
+    ledShow.subColumn( column )
+
+    ledShow.show(0.01, 0, 1000 )
+    ledShow.clear()
+    # ====================================================>
+
+    column = Column( )
+    column.addEffect( SolidDot( 0, (0,0,0) ) )
+    column.addEffect( Blink( 0, (255,0,0), 40, 2, 0 ) )
+    column.addEffect( Blink( 0, (255,255,255), 40, 2, 21 ) )
+    column.addEffect( Scroll( 'right') )
+    ledShow.addColumn( column )
+
+    ledShow.show(0.04, 0, 400 )
+    ledShow.clear()
+    # ====================================================>
 
 
+    column = Column( )
+    column.addEffect( ColorDot( 0, 0.1) )
+    column.addEffect( Scroll( 'right') )
+    column.addEffect( Fadeout( 0.02 ) )
+    ledShow.addColumn( column )
+
+    column = Column( )
+    column.addEffect( ColorDot( SIZE, 0.1 ) )
+    column.addEffect( Scroll( 'left') )
+    column.addEffect( Fadeout( 0.01 ) )
+    ledShow.addColumn( column )
+
+    ledShow.show(0.02, 0, 400 )
+    ledShow.clear()
+    # ====================================================>
 
 
 

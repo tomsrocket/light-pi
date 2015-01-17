@@ -1,0 +1,3 @@
+
+sudo python lightpaint.py
+

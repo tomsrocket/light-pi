@@ -198,11 +198,13 @@ class LedShow:
 
     LedEffekts = None
     LedStrip = None
+    stack = None
 
     def __init__(self):
         logg( "Initializing LedShow" )
         self.LedStrip = LedStrip()
         self.LedEffekts = LedEffekts()
+        self.stack = []
 
     def stageLights( self ):
         for count in range( 1000 ):
@@ -269,6 +271,15 @@ class LedShow:
             time.sleep(0.01)
 
 
+    def addToStack( self, method ):
+        self.stack.append( method )
+
+    def runStack( self):
+        for me in self.stack:
+            me()
+
+
+
 
 def sinLed( count, width ):
     return int( width+math.sin( count )*width )
@@ -285,11 +296,36 @@ print "Displaying..."
 
 
 
-count =0
+
+column = Column( )
+column.setInitMode( "clear" )
+column.addEffect( ledEffekts.colorChange( 'left') )
+column.addEffect( ledEffekts.scroll( 'right') )
+
+column2 = StaticColumn( "fadeborders" )
+
 ledShow = LedShow()
+ledShow.addColumn( column )
+ledShow.substractColumn( column2 )
+ledShow.start(0.001)
 
 
-while True:
+count =0
+print "Init done"
+ledShow.addToStack( ledShow.colorChange  )
+print "added1"
+ledShow.addToStack( ledShow.clear(1) )
+print "added2"
+
+print "run now"
+
+ledShow.runStack()
+print "END now"
+
+exit
+
+
+while False:
     print count
 
 
